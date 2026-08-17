@@ -51,10 +51,14 @@ GRAPHIC_EXTENSIONS = RASTER_EXTENSIONS | VECTOR_EXTENSIONS | {
 DEFAULT_THRESHOLDS = {"photo": 266.0, "composite": 500.0, "linework": 900.0}
 MAX_GRAPHIC_BYTES = 15 * 1024 * 1024
 FIGURE_CAPTION_RE = re.compile(
-    r"^\s*fig(?:ure)?s?\.?\s*(\d+)([a-z])?\b", re.IGNORECASE
+    r"^\s*fig(?:ure)?s?\.?\s*(\d+)([a-z])?\s*(?:[.:\-]|$)", re.IGNORECASE
 )
 FIGURE_CALLOUT_RE = re.compile(
     r"\bfig(?:ure)?s?\.?\s*(\d+)([a-z])?\b", re.IGNORECASE
+)
+FIGURE_GROUP_CALLOUT_RE = re.compile(
+    r"\bfig(?:ure)?s?\.?\s*(\d+[a-z]?(?:\s*(?:,|and|&|to|[-–—])\s*\d+[a-z]?)+)",
+    re.IGNORECASE,
 )
 
 
@@ -76,6 +80,7 @@ class Context:
     source_text: str = ""
     complete_pdf: Path | None = None
     text_only_render: Path | None = None
+    latex_main_relative: Path | None = None
 
     def error(self, code: str, message: str) -> None:
         self.findings.append(Finding("ERROR", code, message))
@@ -125,6 +130,16 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=[],
         metavar="FIG=INCHES",
         help="Printed width for a LaTeX figure whose width cannot be inferred",
+    )
+    parser.add_argument(
+        "--text-width",
+        type=float,
+        help="LaTeX full text-block width in inches when it cannot be inferred from the class",
+    )
+    parser.add_argument(
+        "--column-width",
+        type=float,
+        help="LaTeX single-column width in inches when it cannot be inferred from the class",
     )
     parser.add_argument(
         "--required-dpi",
@@ -245,9 +260,38 @@ def unwrap_elements(root: etree._Element, xpath: str) -> int:
 
 def sanitize_word_xml(data: bytes, remove_graphics: bool) -> tuple[bytes, dict[str, int]]:
     root = xml_parse(data)
-    counts = {"insertions": 0, "deletions": 0, "comments": 0, "graphics": 0}
+    counts = {
+        "insertions": 0,
+        "deletions": 0,
+        "deleted_paragraphs": 0,
+        "format_changes": 0,
+        "comments": 0,
+        "graphics": 0,
+    }
+    deletion_paragraphs = set(
+        root.xpath(".//w:del/ancestor::w:p | .//w:moveFrom/ancestor::w:p", namespaces=NS)
+    )
     counts["deletions"] += remove_elements(root, ".//w:del | .//w:moveFrom")
+    meaningful = (
+        ".//w:t[normalize-space()] | .//w:tab | .//w:br | .//w:drawing | .//w:pict | "
+        ".//w:object | .//w:fldChar | .//w:instrText | .//w:sectPr"
+    )
+    for paragraph in deletion_paragraphs:
+        parent = paragraph.getparent()
+        if parent is not None and not paragraph.xpath(meaningful, namespaces=NS):
+            parent.remove(paragraph)
+            counts["deleted_paragraphs"] += 1
     counts["insertions"] += unwrap_elements(root, ".//w:ins | .//w:moveTo")
+    counts["format_changes"] += remove_elements(
+        root,
+        ".//w:pPrChange | .//w:rPrChange | .//w:tblPrChange | .//w:trPrChange | "
+        ".//w:tcPrChange | .//w:sectPrChange | .//w:tblGridChange | .//w:numberingChange",
+    )
+    remove_elements(
+        root,
+        ".//w:moveFromRangeStart | .//w:moveFromRangeEnd | "
+        ".//w:moveToRangeStart | .//w:moveToRangeEnd",
+    )
     counts["comments"] += remove_elements(
         root, ".//w:commentRangeStart | .//w:commentRangeEnd | .//w:commentReference"
     )
@@ -280,7 +324,14 @@ def sanitize_content_types(data: bytes, remove_graphics: bool) -> bytes:
 
 
 def sanitize_docx(source: Path, destination: Path, remove_graphics: bool) -> dict[str, int]:
-    totals = {"insertions": 0, "deletions": 0, "comments": 0, "graphics": 0}
+    totals = {
+        "insertions": 0,
+        "deletions": 0,
+        "deleted_paragraphs": 0,
+        "format_changes": 0,
+        "comments": 0,
+        "graphics": 0,
+    }
     with zipfile.ZipFile(source) as zin, zipfile.ZipFile(destination, "w", zipfile.ZIP_DEFLATED) as zout:
         for item in zin.infolist():
             lower = item.filename.lower()
@@ -371,9 +422,81 @@ def next_caption(paragraphs: list[etree._Element], index: int) -> tuple[str, str
         match = FIGURE_CAPTION_RE.match(text)
         if match:
             return normalize_figure_id("".join(match.groups(default=""))), text
-        if text and len(text) > 240:
+        if text:
             break
     return None
+
+
+def numbered_figure_paragraphs(root: etree._Element) -> list[etree._Element]:
+    paragraphs = root.xpath(".//w:body//w:p", namespaces=NS)
+    return [
+        paragraph
+        for index, paragraph in enumerate(paragraphs)
+        if paragraph.xpath(".//a:blip[@r:embed]", namespaces=NS)
+        and next_caption(paragraphs, index + 1)
+    ]
+
+
+def remove_numbered_docx_figures(source: Path, destination: Path) -> dict[str, int]:
+    """Remove numbered production figures while retaining inline semantic graphics."""
+    with zipfile.ZipFile(source) as archive:
+        infos = archive.infolist()
+        contents = {info.filename: archive.read(info.filename) for info in infos}
+
+    document = xml_parse(contents["word/document.xml"])
+    removed_relationship_ids: set[str] = set()
+    removed_nodes = 0
+    for paragraph in numbered_figure_paragraphs(document):
+        for graphic in list(paragraph.xpath(".//w:drawing | .//w:pict | .//w:object", namespaces=NS)):
+            removed_relationship_ids.update(
+                graphic.xpath(".//a:blip/@r:embed", namespaces=NS)
+            )
+            parent = graphic.getparent()
+            if parent is not None:
+                parent.remove(graphic)
+                removed_nodes += 1
+    contents["word/document.xml"] = etree.tostring(
+        document, xml_declaration=True, encoding="UTF-8", standalone=True
+    )
+
+    removed_members: set[str] = set()
+    rel_name = "word/_rels/document.xml.rels"
+    relationships_removed = 0
+    if rel_name in contents and removed_relationship_ids:
+        rel_root = xml_parse(contents[rel_name])
+        remaining_targets = {
+            rel.get("Target")
+            for rel in rel_root
+            if rel.get("Id") not in removed_relationship_ids and rel.get("Target")
+        }
+        for rel in list(rel_root):
+            if rel.get("Id") not in removed_relationship_ids:
+                continue
+            target = rel.get("Target")
+            rel_root.remove(rel)
+            relationships_removed += 1
+            if target and target not in remaining_targets:
+                removed_members.add((Path("word") / target).as_posix())
+        contents[rel_name] = etree.tostring(
+            rel_root, xml_declaration=True, encoding="UTF-8", standalone=True
+        )
+
+    with zipfile.ZipFile(destination, "w", zipfile.ZIP_DEFLATED) as archive:
+        for info in infos:
+            if info.filename in removed_members:
+                continue
+            archive.writestr(info, contents[info.filename])
+    return {
+        "graphics": removed_nodes,
+        "relationships": relationships_removed,
+        "media": len(removed_members),
+    }
+
+
+def docx_has_numbered_figures(path: Path) -> bool:
+    with zipfile.ZipFile(path) as archive:
+        root = xml_parse(archive.read("word/document.xml"))
+    return bool(numbered_figure_paragraphs(root))
 
 
 def extract_docx_graphics(path: Path, ctx: Context) -> list[dict]:
@@ -415,14 +538,21 @@ def extract_docx_graphics(path: Path, ctx: Context) -> list[dict]:
         return records
 
     groups: dict[str, list[dict]] = {}
+    unnumbered: list[str] = []
     for record in records:
         if not record["caption_id"]:
-            ctx.error(
-                "FIGURE_WITHOUT_CAPTION",
-                f"Could not associate {record['source_name']} with a following numbered caption",
-            )
+            unnumbered.append(record["source_name"])
             continue
         groups.setdefault(record["caption_id"], []).append(record)
+
+    if unnumbered:
+        ctx.note(
+            "INLINE_GRAPHICS_PRESERVED",
+            f"Preserved {len(unnumbered)} unnumbered inline graphic(s) in the text-only Word file; verify they are semantic table, equation, or notation content",
+        )
+    if not groups:
+        ctx.error("NO_NUMBERED_FIGURES", "No embedded Word graphics could be associated with numbered figure captions")
+        return []
 
     for base_id, group in groups.items():
         if len(group) > 1 and ctx.args.multipart == "combined":
@@ -628,6 +758,43 @@ def validate_pdf(path: Path, ctx: Context, code: str = "INVALID_PDF") -> bool:
     return True
 
 
+def check_pdf_blank_pages(path: Path, ctx: Context, label: str) -> None:
+    """Block pages that contain neither meaningful text nor placed artwork."""
+    try:
+        reader = PdfReader(str(path))
+    except Exception:
+        return
+    blank_pages: list[int] = []
+    graphics_only_pages: list[int] = []
+    for page_number, page in enumerate(reader.pages, 1):
+        try:
+            text = page.extract_text() or ""
+        except Exception:
+            text = ""
+        words = re.findall(r"[^\W\d_]{2,}", text, flags=re.UNICODE)
+        if len(words) >= 2:
+            continue
+        contents = page.get_contents()
+        content_bytes = contents.get_data() if contents is not None else b""
+        placed_artwork = bool(re.search(rb"/[^\s]+\s+Do\b", content_bytes))
+        if placed_artwork:
+            graphics_only_pages.append(page_number)
+        else:
+            blank_pages.append(page_number)
+    if blank_pages:
+        pages = ", ".join(str(value) for value in blank_pages)
+        ctx.error(
+            "BLANK_OR_NEAR_BLANK_PAGE",
+            f"{label} contains page(s) with no meaningful text or placed artwork: {pages}",
+        )
+    if graphics_only_pages:
+        pages = ", ".join(str(value) for value in graphics_only_pages)
+        ctx.warn(
+            "GRAPHICS_ONLY_PAGE",
+            f"Inspect graphics-only page(s) in {label} manually: {pages}",
+        )
+
+
 def render_pdf(path: Path, target: Path, ctx: Context, label: str) -> None:
     renderer = shutil.which("pdftoppm")
     if not renderer:
@@ -679,6 +846,11 @@ def caption_and_callout_sets(text: str) -> tuple[set[str], set[str]]:
         else:
             for match in FIGURE_CALLOUT_RE.finditer(line):
                 callouts.add(normalize_figure_id("".join(match.groups(default=""))))
+            for group in FIGURE_GROUP_CALLOUT_RE.findall(line):
+                callouts.update(
+                    normalize_figure_id(value)
+                    for value in re.findall(r"\d+\s*[a-z]?", group, flags=re.IGNORECASE)
+                )
     return captions, callouts
 
 
@@ -689,12 +861,16 @@ def process_docx(source: Path, ctx: Context, kinds: dict[str, str], widths: dict
     clean_docx.parent.mkdir(parents=True, exist_ok=True)
     ctx.upload.mkdir(parents=True, exist_ok=True)
     clean_counts = sanitize_docx(source, clean_docx, remove_graphics=False)
-    text_counts = sanitize_docx(source, text_only, remove_graphics=True)
+    text_counts = remove_numbered_docx_figures(clean_docx, text_only)
     changed = sum(clean_counts.values())
     if changed:
         ctx.note(
             "WORD_MARKUP_RESOLVED",
-            f"Accepted {clean_counts['insertions']} insertion group(s), removed {clean_counts['deletions']} deletion group(s), and removed {clean_counts['comments']} comment marker(s)",
+            f"Accepted {clean_counts['insertions']} insertion group(s), removed "
+            f"{clean_counts['deletions']} deletion group(s) and "
+            f"{clean_counts['deleted_paragraphs']} emptied deleted paragraph(s), removed "
+            f"{clean_counts['format_changes']} formatting-revision record(s), and removed "
+            f"{clean_counts['comments']} comment marker(s)",
         )
 
     clean_text = docx_visible_text(clean_docx)
@@ -702,10 +878,10 @@ def process_docx(source: Path, ctx: Context, kinds: dict[str, str], widths: dict
     ctx.source_text = clean_text
     if clean_text != text_only_text:
         ctx.error("TEXT_ONLY_MISMATCH", "Removing graphics changed visible Word text; figure callouts or captions may have been lost")
-    if docx_has_graphics(text_only):
-        ctx.error("GRAPHICS_REMAIN", "The generated Word text-only file still contains embedded graphics")
+    if docx_has_numbered_figures(text_only):
+        ctx.error("NUMBERED_FIGURES_REMAIN", "The generated Word text-only file still contains numbered production figures")
     if text_counts["graphics"] == 0:
-        ctx.warn("NO_GRAPHICS_REMOVED", "No Word drawing/object nodes were removed from the text-only file")
+        ctx.warn("NO_GRAPHICS_REMOVED", "No numbered Word drawing/object nodes were removed from the text-only file")
 
     records = extract_docx_graphics(clean_docx, ctx)
     process_figure_records(records, ctx, kinds, widths)
@@ -725,11 +901,17 @@ def process_docx(source: Path, ctx: Context, kinds: dict[str, str], widths: dict
     complete_pdf = ctx.upload / f"{paper}_complete.pdf"
     if convert_docx_to_pdf(clean_docx, complete_pdf, ctx, "COMPLETE_PDF_FAILED"):
         ctx.complete_pdf = complete_pdf
+        ctx.warn(
+            "WORD_RENDERER_VARIANCE",
+            "The complete PDF was rendered with LibreOffice; compare pagination, fonts, equations, and object placement with Microsoft Word before upload",
+        )
         check_pdf_fonts(complete_pdf, ctx)
+        check_pdf_blank_pages(complete_pdf, ctx, "complete PDF")
         render_pdf(complete_pdf, ctx.qa / "complete", ctx, "complete PDF")
     qa_text_pdf = ctx.root / "work" / f"{paper}_text_only.pdf"
     if convert_docx_to_pdf(text_only, qa_text_pdf, ctx, "TEXT_ONLY_RENDER_FAILED"):
         ctx.text_only_render = qa_text_pdf
+        check_pdf_blank_pages(qa_text_pdf, ctx, "rendered text-only Word file")
         render_pdf(qa_text_pdf, ctx.qa / "text-only", ctx, "text-only Word file")
 
 
@@ -816,13 +998,139 @@ def citation_audit(tex_text: str, bibs: list[Path], ctx: Context) -> None:
         ctx.warn("NO_CITATIONS_DETECTED", "No LaTeX citation commands were detected; audit references manually")
 
 
-def parse_width_option(options: str) -> float | None:
-    match = re.search(r"\bwidth\s*=\s*([0-9]*\.?[0-9]+)\s*(in|cm|mm|pt)\b", options)
+def dimension_inches(value: str) -> float | None:
+    match = re.fullmatch(r"\s*([0-9]*\.?[0-9]+)\s*(in|cm|mm|pt)\s*", value)
     if not match:
         return None
-    value = float(match.group(1))
-    unit = match.group(2)
-    return value * {"in": 1.0, "cm": 1 / 2.54, "mm": 1 / 25.4, "pt": 1 / 72.27}[unit]
+    amount = float(match.group(1))
+    return amount * {"in": 1.0, "cm": 1 / 2.54, "mm": 1 / 25.4, "pt": 1 / 72.27}[match.group(2)]
+
+
+def relative_width_inches(value: str, scope: dict[str, float | None]) -> float | None:
+    absolute = dimension_inches(value)
+    if absolute is not None:
+        return absolute
+    match = re.fullmatch(
+        r"\s*([0-9]*\.?[0-9]+)?\s*\\(linewidth|textwidth|columnwidth)\s*",
+        value,
+    )
+    if not match:
+        return None
+    base = scope.get(match.group(2))
+    if base is None:
+        return None
+    return float(match.group(1) or 1.0) * base
+
+
+def parse_width_option(options: str, scope: dict[str, float | None] | None = None) -> float | None:
+    match = re.search(
+        r"\bwidth\s*=\s*([^,\]]+)",
+        options,
+    )
+    if not match:
+        return None
+    return relative_width_inches(match.group(1), scope or {})
+
+
+def infer_latex_layout_widths(
+    project: Path, tex_text: str, ctx: Context
+) -> dict[str, float | None]:
+    text_width = ctx.args.text_width
+    column_width = ctx.args.column_width
+    inferred: list[str] = []
+
+    class_match = re.search(
+        r"\\documentclass\s*(?:\[[^\]]*\])?\s*\{([^}]+)\}",
+        strip_tex_comments(tex_text),
+    )
+    class_text = ""
+    if class_match:
+        class_name = class_match.group(1).strip()
+        candidates = [project / f"{class_name}.cls", *project.rglob(f"{Path(class_name).name}.cls")]
+        class_file = next((path for path in candidates if path.is_file()), None)
+        if class_file:
+            class_text = strip_tex_comments(
+                class_file.read_text(encoding="utf-8", errors="replace")
+            )
+
+    geometry: dict[str, str] = {}
+    if class_text:
+        geometry_match = re.search(
+            r"\\(?:RequirePackage|usepackage)\s*\[([^\]]+)\]\s*\{geometry\}",
+            class_text,
+            flags=re.DOTALL,
+        )
+        if geometry_match:
+            for item in geometry_match.group(1).split(","):
+                if "=" in item:
+                    key, value = item.split("=", 1)
+                    geometry[key.strip().lower()] = value.strip()
+
+    if text_width is None:
+        text_width = dimension_inches(geometry.get("textwidth", ""))
+        if text_width is None:
+            paper_width = dimension_inches(geometry.get("paperwidth", ""))
+            left = dimension_inches(geometry.get("left", ""))
+            right = dimension_inches(geometry.get("right", ""))
+            if paper_width is not None and left is not None and right is not None:
+                text_width = paper_width - left - right
+        if text_width is not None:
+            inferred.append(f"text width {text_width:.3f} in")
+
+    if column_width is None and text_width is not None:
+        column_sep = None
+        if class_text:
+            separator_match = re.search(
+                r"\\setlength\s*\{?\\columnsep\}?\s*\{([^}]+)\}",
+                class_text,
+            )
+            if separator_match:
+                column_sep = dimension_inches(separator_match.group(1))
+        if "twocolumn" in class_text and column_sep is not None:
+            column_width = (text_width - column_sep) / 2
+        elif "twocolumn" not in class_text:
+            column_width = text_width
+        if column_width is not None:
+            inferred.append(f"column width {column_width:.3f} in")
+
+    if inferred:
+        ctx.note("LATEX_LAYOUT_INFERRED", "Inferred " + " and ".join(inferred) + " from the local document class")
+    return {"textwidth": text_width, "columnwidth": column_width}
+
+
+def scoped_latex_graphic_width(
+    environment: str,
+    graphic_offset: int,
+    options: str,
+    figure_starred: bool,
+    layout: dict[str, float | None],
+) -> float | None:
+    base = {
+        "textwidth": layout.get("textwidth"),
+        "columnwidth": layout.get("columnwidth"),
+        "linewidth": layout.get("textwidth") if figure_starred else layout.get("columnwidth"),
+    }
+    stack: list[tuple[str, dict[str, float | None]]] = [("figure", base)]
+    token_re = re.compile(
+        r"\\begin\{(minipage|subfigure)\}(?:\[[^\]]*\])?\s*\{([^}]+)\}"
+        r"|\\end\{(minipage|subfigure)\}"
+    )
+    for token in token_re.finditer(environment[:graphic_offset]):
+        if token.group(1):
+            width = relative_width_inches(token.group(2), stack[-1][1])
+            nested = (
+                {"textwidth": width, "columnwidth": width, "linewidth": width}
+                if width is not None
+                else stack[-1][1].copy()
+            )
+            stack.append((token.group(1), nested))
+        else:
+            closing = token.group(3)
+            while len(stack) > 1:
+                name, _ = stack.pop()
+                if name == closing:
+                    break
+    return parse_width_option(options, stack[-1][1])
 
 
 def resolve_graphic(project: Path, raw: str, ctx: Context) -> Path | None:
@@ -857,14 +1165,28 @@ def resolve_graphic(project: Path, raw: str, ctx: Context) -> Path | None:
     return None
 
 
-def latex_figure_records(project: Path, tex_text: str, ctx: Context) -> list[dict]:
+def latex_figure_records(
+    project: Path,
+    tex_text: str,
+    ctx: Context,
+    layout: dict[str, float | None],
+) -> list[dict]:
     clean = strip_tex_comments(tex_text)
-    environments = re.findall(
-        r"\\begin\{figure\*?\}(.*?)\\end\{figure\*?\}", clean, flags=re.DOTALL
+    environments = list(
+        re.finditer(
+            r"\\begin\{(figure\*?)\}(.*?)\\end\{\1\}", clean, flags=re.DOTALL
+        )
     )
     records: list[dict] = []
-    for number, environment in enumerate(environments, start=1):
-        graphics = re.findall(r"\\includegraphics\s*(?:\[([^\]]*)\])?\s*\{([^}]+)\}", environment)
+    for number, environment_match in enumerate(environments, start=1):
+        environment_name = environment_match.group(1)
+        environment = environment_match.group(2)
+        graphics = list(
+            re.finditer(
+                r"\\includegraphics\s*(?:\[([^\]]*)\])?\s*\{([^}]+)\}",
+                environment,
+            )
+        )
         caption_match = re.search(r"\\caption(?:\[[^\]]*\])?\s*\{(.*?)\}", environment, flags=re.DOTALL)
         caption = re.sub(r"\s+", " ", caption_match.group(1)).strip() if caption_match else ""
         labels = re.findall(r"\\label\s*\{([^}]+)\}", environment)
@@ -878,7 +1200,8 @@ def latex_figure_records(project: Path, tex_text: str, ctx: Context) -> list[dic
                 "AMBIGUOUS_COMBINATION",
                 f"Figure {number} contains {len(graphics)} graphics; combine them in source rather than inventing an automated layout",
             )
-        for index, (options, raw_path) in enumerate(graphics):
+        for index, graphic in enumerate(graphics):
+            options, raw_path = graphic.group(1), graphic.group(2)
             source = resolve_graphic(project, raw_path, ctx)
             if source is None:
                 continue
@@ -888,7 +1211,13 @@ def latex_figure_records(project: Path, tex_text: str, ctx: Context) -> list[dic
                     "payload": source.read_bytes(),
                     "source_name": source.name,
                     "source_extension": source.suffix.lower(),
-                    "width_inches": parse_width_option(options or ""),
+                    "width_inches": scoped_latex_graphic_width(
+                        environment,
+                        graphic.start(),
+                        options or "",
+                        environment_name.endswith("*"),
+                        layout,
+                    ),
                     "figure_id": figure_id,
                     "caption": caption,
                     "labels": labels,
@@ -904,14 +1233,70 @@ def latex_figure_records(project: Path, tex_text: str, ctx: Context) -> list[dic
     return records
 
 
-def copy_latex_text_only(project: Path, main: Path, destination: Path, ctx: Context) -> None:
+def resolve_local_latex_dependency(
+    project: Path, current: Path, raw: str, suffix: str
+) -> Path | None:
+    cleaned = raw.strip().strip('"\'')
+    candidate = current.parent / cleaned
+    if not candidate.suffix:
+        candidate = candidate.with_suffix(suffix)
+    if candidate.is_file():
+        return candidate.resolve()
+    candidate = project / cleaned
+    if not candidate.suffix:
+        candidate = candidate.with_suffix(suffix)
+    if candidate.is_file():
+        return candidate.resolve()
+    name = Path(cleaned).name
+    if not Path(name).suffix:
+        name += suffix
+    matches = [path.resolve() for path in project.rglob(name) if path.is_file()]
+    return matches[0] if len(matches) == 1 else None
+
+
+def latex_dependency_files(project: Path, main: Path, ctx: Context) -> set[Path]:
+    required: set[Path] = {main.resolve()}
+    pending = [main.resolve()]
+    patterns = [
+        (r"\\(?:input|include)\s*\{([^}]+)\}", ".tex", True),
+        (r"\\bibliography\s*\{([^}]+)\}", ".bib", True),
+        (r"\\addbibresource(?:\[[^\]]*\])?\s*\{([^}]+)\}", ".bib", True),
+        (r"\\documentclass\s*(?:\[[^\]]*\])?\s*\{([^}]+)\}", ".cls", False),
+        (r"\\usepackage\s*(?:\[[^\]]*\])?\s*\{([^}]+)\}", ".sty", False),
+        (r"\\bibliographystyle\s*\{([^}]+)\}", ".bst", False),
+    ]
+    while pending:
+        current = pending.pop()
+        if current.suffix.lower() not in {".tex", ".cls", ".sty"}:
+            continue
+        text = strip_tex_comments(current.read_text(encoding="utf-8", errors="replace"))
+        for pattern, suffix, must_exist in patterns:
+            for match in re.finditer(pattern, text):
+                for raw in match.group(1).split(","):
+                    dependency = resolve_local_latex_dependency(project, current, raw, suffix)
+                    if dependency is None:
+                        if must_exist:
+                            ctx.error(
+                                "MISSING_LATEX_DEPENDENCY",
+                                f"Could not resolve {raw.strip()}{suffix if not Path(raw.strip()).suffix else ''} referenced by {current.relative_to(project)}",
+                            )
+                        continue
+                    if dependency not in required:
+                        required.add(dependency)
+                        pending.append(dependency)
+    return required
+
+
+def copy_latex_text_only(
+    project: Path,
+    main: Path,
+    destination: Path,
+    dependencies: set[Path],
+    ctx: Context,
+) -> None:
     destination.mkdir(parents=True, exist_ok=True)
-    for source in project.rglob("*"):
-        if not source.is_file():
-            continue
+    for source in sorted(dependencies):
         relative = source.relative_to(project)
-        if source.suffix.lower() in GRAPHIC_EXTENSIONS or source.suffix.lower() in {".aux", ".log", ".out", ".blg", ".bbl", ".synctex.gz"}:
-            continue
         target = destination / relative
         target.parent.mkdir(parents=True, exist_ok=True)
         if source.resolve() == main.resolve():
@@ -924,6 +1309,19 @@ def copy_latex_text_only(project: Path, main: Path, destination: Path, ctx: Cont
             target.write_text(text.replace(marker, replacement, 1), encoding="utf-8")
         else:
             shutil.copy2(source, target)
+    eligible = {
+        source.resolve()
+        for source in project.rglob("*")
+        if source.is_file()
+        and source.suffix.lower() not in GRAPHIC_EXTENSIONS
+        and source.suffix.lower() not in {".aux", ".log", ".out", ".blg", ".bbl", ".synctex.gz"}
+    }
+    pruned = eligible - dependencies
+    if pruned:
+        ctx.note(
+            "LATEX_UNUSED_FILES_PRUNED",
+            f"Excluded {len(pruned)} unreferenced non-graphic project file(s), including archived manuscript versions, from the upload source set",
+        )
 
 
 def compile_latex(project: Path, main: Path, destination: Path, ctx: Context) -> bool:
@@ -951,17 +1349,16 @@ def rendered_reference_audit(path: Path, ctx: Context) -> None:
         text = "\n".join(page.extract_text() or "" for page in PdfReader(str(path)).pages)
     except Exception:
         return
-    lower = text.lower()
-    index = lower.rfind("references")
-    if index < 0:
+    headings = list(re.finditer(r"(?im)^\s*references\s*\d*\s*$", text))
+    if not headings:
         ctx.warn("NO_RENDERED_REFERENCES_HEADING", "Could not locate a References heading in the complete PDF")
         return
-    tail = text[index:]
-    numbers = [int(value) for value in re.findall(r"(?m)^\s*\[?(\d+)\]?\s+[A-Z]", tail)]
+    tail = text[headings[-1].end() :]
+    numbers = [int(value) for value in re.findall(r"(?m)^\s*\[(\d+)\]\s+", tail)]
     if len(numbers) >= 3:
-        unique = sorted(set(numbers))
+        unique = list(dict.fromkeys(numbers))
         expected = list(range(unique[0], unique[-1] + 1))
-        if unique != expected:
+        if unique != expected or unique[0] != 1:
             ctx.warn("REFERENCE_NUMBER_GAPS", f"Rendered reference numbering may contain gaps: {unique}")
     else:
         ctx.warn("REFERENCE_AUDIT_MANUAL", "Rendered reference numbering could not be parsed reliably; compare citations and references manually")
@@ -975,17 +1372,20 @@ def process_latex_zip(source: Path, ctx: Context, kinds: dict[str, str], widths:
     main = find_tex_main(project, ctx.args.main, ctx)
     if main is None:
         return
+    ctx.latex_main_relative = main.relative_to(project)
     tex_text = expand_tex(main)
     ctx.source_text = tex_text
-    bibs = sorted(project.rglob("*.bib"))
+    dependencies = latex_dependency_files(project, main, ctx)
+    bibs = sorted(path for path in dependencies if path.suffix.lower() == ".bib")
     if not bibs:
-        ctx.error("MISSING_BIB", "No separate .bib file exists in the Overleaf source")
+        ctx.error("MISSING_BIB", "No separate .bib file is referenced by the root LaTeX source")
     else:
         citation_audit(tex_text, bibs, ctx)
-    records = latex_figure_records(project, tex_text, ctx)
+    layout = infer_latex_layout_widths(project, tex_text, ctx)
+    records = latex_figure_records(project, tex_text, ctx, layout)
     process_figure_records(records, ctx, kinds, widths)
     native = ctx.upload / "native"
-    copy_latex_text_only(project, main, native, ctx)
+    copy_latex_text_only(project, main, native, dependencies, ctx)
 
     latexmk = shutil.which("latexmk")
     if latexmk:
@@ -995,6 +1395,7 @@ def process_latex_zip(source: Path, ctx: Context, kinds: dict[str, str], widths:
         text_only_pdf = ctx.root / "work" / f"{safe_name(ctx.args.paper_id)}_text_only.pdf"
         if compile_latex(compile_tree, compile_main, text_only_pdf, ctx):
             ctx.text_only_render = text_only_pdf
+            check_pdf_blank_pages(text_only_pdf, ctx, "rendered text-only LaTeX source")
             render_pdf(text_only_pdf, ctx.qa / "text-only", ctx, "text-only LaTeX source")
     else:
         ctx.warn(
@@ -1019,6 +1420,7 @@ def process_latex_zip(source: Path, ctx: Context, kinds: dict[str, str], widths:
         ctx.complete_pdf = complete_pdf
     if ctx.complete_pdf:
         check_pdf_fonts(ctx.complete_pdf, ctx)
+        check_pdf_blank_pages(ctx.complete_pdf, ctx, "complete PDF")
         rendered_reference_audit(ctx.complete_pdf, ctx)
         render_pdf(ctx.complete_pdf, ctx.qa / "complete", ctx, "complete PDF")
 
@@ -1031,9 +1433,10 @@ def check_text_only_native(ctx: Context) -> None:
         ctx.error("BIB_NOT_UPLOADED", "The generated native source set does not contain a separate .bib file")
     for tex in native.rglob("*.tex"):
         text = tex.read_text(encoding="utf-8", errors="replace")
-        if tex.name == Path(ctx.args.main or "").name or "\\documentclass" in text:
+        relative = tex.relative_to(native)
+        if relative == ctx.latex_main_relative or "\\documentclass" in text:
             if "Production text-only override" not in text:
-                ctx.error("LATEX_GRAPHICS_NOT_DISABLED", f"Graphics were not disabled in root TeX file {tex.relative_to(native)}")
+                ctx.error("LATEX_GRAPHICS_NOT_DISABLED", f"Graphics were not disabled in root TeX file {relative}")
 
 
 def copy_supplemental_files(ctx: Context) -> None:
@@ -1076,7 +1479,8 @@ def output_inventory(root: Path, excluded: set[Path] | None = None) -> list[dict
 
 
 def write_report(ctx: Context) -> None:
-    status = "BLOCKED" if ctx.blocked else "PASS"
+    has_warnings = any(finding.level == "WARNING" for finding in ctx.findings)
+    status = "BLOCKED" if ctx.blocked else ("PASS — MANUAL WARNINGS REMAIN" if has_warnings else "PASS")
     raster_rule = (
         f"paper-specific {ctx.args.required_dpi:g} dpi minimum"
         if ctx.args.required_dpi
@@ -1161,6 +1565,7 @@ def write_manifest(ctx: Context, zip_path: Path | None) -> None:
             "thresholds": DEFAULT_THRESHOLDS,
         },
         "status": "blocked" if ctx.blocked else "pass",
+        "manual_review_required": any(finding.level == "WARNING" for finding in ctx.findings),
         "findings": [finding.__dict__ for finding in ctx.findings],
         "figures": ctx.figures,
         "upload_zip": zip_path.name if zip_path else None,
@@ -1197,6 +1602,12 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     if args.required_dpi is not None and args.required_dpi <= 0:
         print("--required-dpi must be positive", file=sys.stderr)
+        return 2
+    if args.text_width is not None and args.text_width <= 0:
+        print("--text-width must be positive", file=sys.stderr)
+        return 2
+    if args.column_width is not None and args.column_width <= 0:
+        print("--column-width must be positive", file=sys.stderr)
         return 2
     if args.due_date:
         try:

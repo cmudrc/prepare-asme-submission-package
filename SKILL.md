@@ -86,24 +86,34 @@ For a LaTeX raster whose final width cannot be inferred, provide its printed wid
 --figure-width 3=3.25 --figure-width 4=6.5
 ```
 
+If a local class uses relative widths but its geometry cannot be inferred, provide the layout once rather than guessing per figure:
+
+```bash
+--text-width 6.84 --column-width 3.33
+```
+
 Never upsample a low-resolution image to manufacture compliance. Recover or regenerate the native source.
 
 The launcher discovers the bundled Codex Python runtime. Word rendering also requires LibreOffice, and visual QA requires Poppler. If the launcher cannot find them, load the bundled workspace dependencies and set `CODEX_BUNDLED_PYTHON` to the returned Python path. Outside Codex, install `scripts/requirements.txt` in an isolated Python environment.
 
 ## Enforce the non-obvious checks
 
-- Remove only graphics from text-only source. Preserve every figure callout and caption.
+- Remove only numbered production figures from text-only source. Preserve every figure callout and caption, and retain unnumbered semantic graphics used as table symbols, equations, or notation.
+- Resolve tracked text and formatting revisions. Empty paragraphs left by accepted deletions can create blank pages or visible change bars in non-Word renderers.
 - Require a separate `.bib` upload for LaTeX even when references appear in the `.tex` or generated `.bbl`.
 - Reject `\nocite{*}` unless the paper intentionally cites every bibliography record and the editorial office permits it.
 - Compare citation keys to bibliography keys and compare rendered citation/reference numbering for gaps or extras.
+- Copy only the reachable LaTeX dependency closure; exclude archived manuscript versions and unrelated class/style files.
 - Match numbered figure files to in-text callouts and the figure-caption list, including subfigure letters.
 - Name files exactly as figures appear in the paper (`Fig_1`, `Fig_9a`, and so on).
 - Treat nominal dpi metadata and effective dpi at printed size as separate checks.
+- Flatten raster alpha against white when exporting TIFF so transparent figures do not render with a black background in production tooling.
+- Block blank PDF pages. Inspect graphics-only pages manually.
 - Preserve a complete replacement set and hashes. Portal warnings, permissions, or editor approval may prevent later edits.
 
 ## Inspect and close QA
 
-Read `QA_REPORT.md` and `manifest.json`. A nonzero packager exit means the package is blocked and no upload ZIP is created.
+Read `QA_REPORT.md` and `manifest.json`. A nonzero packager exit means the package is blocked and no upload ZIP is created. `PASS — MANUAL WARNINGS REMAIN` means the structural checks passed and the ZIP exists, but every listed warning must still be closed before upload; the manifest records this as `manual_review_required: true`.
 
 Then follow [references/qa-checklist.md](references/qa-checklist.md):
 
@@ -112,6 +122,8 @@ Then follow [references/qa-checklist.md](references/qa-checklist.md):
 3. Inspect every figure at intended one- or two-column size.
 4. Confirm the upload ZIP contains only production files.
 5. Rebuild the entire package after any change.
+
+Word PDFs are rendered with LibreOffice when Microsoft Word is not available as a safe unattended renderer. Treat the resulting `WORD_RENDERER_VARIANCE` warning as a required comparison gate: fonts, pagination, equations, tracked-formatting artifacts, and object placement can differ from native Word even when the document XML is clean.
 
 Do not waive failed resolution, missing/unnumbered figures, ambiguous multipart handling, missing bibliography data, uncited references, compilation failure, or a text-only/full-PDF mismatch.
 

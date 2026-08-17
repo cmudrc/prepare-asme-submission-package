@@ -3,7 +3,7 @@
 ## Source freeze
 
 - Confirm source filename, revision, and approval state.
-- Confirm no unresolved tracked changes or comments.
+- Confirm no unresolved tracked text, tracked formatting, change bars, revision colors, or comments.
 - Confirm late changes appear in complete PDF, text-only source, bibliography, and figures.
 - Confirm code/data links are present, reachable as promised, and identical across outputs.
 
@@ -12,6 +12,7 @@
 - Inspect every page at 100% zoom.
 - Confirm figures, tables, equations, symbols, hyperlinks, citations, and references render correctly.
 - Confirm no comments, highlights, editing marks, placeholders, or blank figure boxes appear.
+- Confirm there are no blank or unexpectedly sparse trailing pages.
 - Confirm page count/order and embedded fonts.
 - Confirm figure/table caption lists are present when required.
 
@@ -39,6 +40,7 @@
 - Check nominal and effective dpi; do not trust a tag alone.
 - Check crop, whitespace, font size, line weight, color, transparency, and grayscale legibility.
 - Confirm TIFF/EPS, exact numbering, and 15 MB maximum.
+- Confirm transparent raster artwork renders correctly against white rather than black.
 
 ## Upload and recovery
 
