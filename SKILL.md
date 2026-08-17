@@ -1,6 +1,6 @@
 ---
-name: prepare-jmd-submission
-description: Build and validate final-production submission packages for the ASME Journal of Mechanical Design (JMD), Journal of Computing and Information Science in Engineering (JCISE), and similar ASME journals from a Word manuscript (.docx) or Overleaf/LaTeX source ZIP. Use when preparing accepted-manuscript production files, extracting numbered TIFF/EPS figures and subfigures, creating native text-only source, rendering the complete clean PDF, checking figures/captions/references/bibliography consistency, or repairing a package rejected by the editorial office.
+name: prepare-asme-submission
+description: Build and validate final-production submission packages for ASME journals, including the Journal of Mechanical Design (JMD) and Journal of Computing and Information Science in Engineering (JCISE), from a Word manuscript (.docx) or Overleaf/LaTeX source ZIP. Use when preparing accepted-manuscript production files, extracting numbered TIFF/EPS figures and subfigures, creating native text-only source, rendering the complete clean PDF, checking figures/captions/references/bibliography consistency, or repairing a package rejected by the editorial office.
 ---
 
 # Prepare an ASME journal submission
@@ -15,7 +15,7 @@ Turn one authoritative manuscript source into a synchronized upload package:
 ## Establish the controlling requirements
 
 1. Read the acceptance letter, current portal instructions, and any direct editorial-office message. Follow the most specific and most recent instruction.
-2. Read [references/jmd-jcise-requirements.md](references/jmd-jcise-requirements.md) for the current ASME baseline and source links.
+2. Read [references/asme-requirements.md](references/asme-requirements.md) for the current ASME baseline and source links.
 3. Read [references/editorial-regressions.md](references/editorial-regressions.md) and turn each applicable failure mode into a closed QA check.
 4. Record the paper ID, journal, due date, required statements, multipart-figure policy, supplemental files, and portal naming rules.
 5. Keep private correspondence, student identities, and manuscript content out of the skill and repository.

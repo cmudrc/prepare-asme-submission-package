@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build and audit an ASME JMD/JCISE final-submission package.
+"""Build and audit an ASME journal final-submission package.
 
 The program deliberately refuses to manufacture image resolution or to infer
 ambiguous multipart layouts.  It creates QA artifacts even when a hard check
@@ -93,11 +93,15 @@ class Context:
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Build a validated JMD/JCISE final-submission package."
+        description="Build a validated ASME journal final-submission package."
     )
     parser.add_argument("source", type=Path, help="Authoritative .docx or Overleaf .zip")
     parser.add_argument("--paper-id", required=True)
-    parser.add_argument("--journal", choices=("jmd", "jcise", "asme"), default="jmd")
+    parser.add_argument(
+        "--journal",
+        default="asme",
+        help="ASME journal name or short code (for example, jmd, jcise, or jvse)",
+    )
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--main", help="Root .tex path within an Overleaf ZIP")
     parser.add_argument("--full-pdf", type=Path, help="Accepted complete PDF for LaTeX input")
@@ -916,7 +920,7 @@ def copy_latex_text_only(project: Path, main: Path, destination: Path, ctx: Cont
             if marker not in text:
                 ctx.error("MISSING_BEGIN_DOCUMENT", f"Root TeX file {relative} has no begin{{document}}")
                 continue
-            replacement = marker + "\n% Production text-only override inserted by prepare-jmd-submission\n\\renewcommand{\\includegraphics}[2][]{\\relax}\n"
+            replacement = marker + "\n% Production text-only override inserted by prepare-asme-submission\n\\renewcommand{\\includegraphics}[2][]{\\relax}\n"
             target.write_text(text.replace(marker, replacement, 1), encoding="utf-8")
         else:
             shutil.copy2(source, target)

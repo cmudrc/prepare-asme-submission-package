@@ -1,4 +1,4 @@
 interface:
-  display_name: "Prepare JMD Submission"
-  short_description: "Build validated JMD/JCISE submission packages"
-  default_prompt: "Use $prepare-jmd-submission to turn this Word document or Overleaf ZIP into a validated final-submission package."
+  display_name: "Prepare ASME Submission"
+  short_description: "Build validated ASME submission packages"
+  default_prompt: "Use $prepare-asme-submission to turn this Word document or Overleaf ZIP into a validated final-submission package."

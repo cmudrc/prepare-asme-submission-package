@@ -1,4 +1,4 @@
-# JMD/JCISE final-production baseline
+# ASME journal final-production baseline
 
 Use the acceptance letter, live portal, and direct editorial-office message as the source of truth. Apply this baseline only when they do not say otherwise.
 
