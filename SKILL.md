@@ -1,9 +1,9 @@
 ---
-name: prepare-asme-submission
+name: prepare-asme-submission-package
 description: Build and validate final-production submission packages for ASME journals, including the Journal of Mechanical Design (JMD) and Journal of Computing and Information Science in Engineering (JCISE), from a Word manuscript (.docx) or Overleaf/LaTeX source ZIP. Use when preparing accepted-manuscript production files, extracting numbered TIFF/EPS figures and subfigures, creating native text-only source, rendering the complete clean PDF, checking figures/captions/references/bibliography consistency, or repairing a package rejected by the editorial office.
 ---
 
-# Prepare an ASME journal submission
+# Prepare an ASME journal submission package
 
 Turn one authoritative manuscript source into a synchronized upload package:
 
@@ -11,6 +11,8 @@ Turn one authoritative manuscript source into a synchronized upload package:
 - one native text-only Word file or LaTeX source set;
 - one TIFF/EPS file per numbered figure or subfigure; and
 - a manifest and QA report kept outside the upload ZIP.
+
+Prepare the package locally only. Do not upload it, submit it to a portal, or send it to an editorial office unless the user separately authorizes that external action.
 
 ## Establish the controlling requirements
 

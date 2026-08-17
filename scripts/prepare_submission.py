@@ -920,7 +920,7 @@ def copy_latex_text_only(project: Path, main: Path, destination: Path, ctx: Cont
             if marker not in text:
                 ctx.error("MISSING_BEGIN_DOCUMENT", f"Root TeX file {relative} has no begin{{document}}")
                 continue
-            replacement = marker + "\n% Production text-only override inserted by prepare-asme-submission\n\\renewcommand{\\includegraphics}[2][]{\\relax}\n"
+            replacement = marker + "\n% Production text-only override inserted by prepare-asme-submission-package\n\\renewcommand{\\includegraphics}[2][]{\\relax}\n"
             target.write_text(text.replace(marker, replacement, 1), encoding="utf-8")
         else:
             shutil.copy2(source, target)

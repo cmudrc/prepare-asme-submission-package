@@ -1,4 +1,4 @@
 interface:
-  display_name: "Prepare ASME Submission"
-  short_description: "Build validated ASME submission packages"
-  default_prompt: "Use $prepare-asme-submission to turn this Word document or Overleaf ZIP into a validated final-submission package."
+  display_name: "Prepare ASME Submission Package"
+  short_description: "Build validated ASME production-file packages"
+  default_prompt: "Use $prepare-asme-submission-package to turn this Word document or Overleaf ZIP into a validated final-submission package without uploading it."
