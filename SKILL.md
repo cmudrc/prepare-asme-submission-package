@@ -94,6 +94,19 @@ If a local class uses relative widths but its geometry cannot be inferred, provi
 
 Never upsample a low-resolution image to manufacture compliance. Recover or regenerate the native source.
 
+## Recover unworkable source figures
+
+Treat a missing, corrupt, incorrectly cropped, unsupported, or genuinely under-resolution figure as a source-recovery task, not merely a QA finding.
+
+1. Resolve any classification or printed-width ambiguity first. Do not request a replacement for a photograph that actually satisfies the photographic threshold or for a figure whose placed width was inferred incorrectly.
+2. Search the supplied manuscript, Overleaf ZIP, and project directories already placed in scope for native vector artwork, plotting files, presentation slides, notebooks, higher-resolution exports, or prior synchronized packages.
+3. If the user has already authorized relevant Box, Overleaf, Gmail, Slack, or other connected sources, search them read-only using the paper ID, figure number, caption text, source filename, authors, and revision dates. Do not ask again for permission already granted.
+4. If useful locations are available but not yet authorized, pause and ask one concise, consolidated question naming the affected figures and the exact locations proposed for search. Do not expand into private communications or unrelated storage without permission.
+5. Verify every candidate against the accepted manuscript: content, subfigure order, crop, labels, revision date, pixel dimensions or vector status, and intended printed width. Never silently substitute a merely similar figure.
+6. If recovery fails, ask the user to provide or regenerate the native/high-resolution source. Report each affected figure, current effective dpi, required dpi, intended width, and minimum pixel dimensions. Offer to prepare a bounded replacement request only if the user wants one.
+
+Keep the package blocked until compliant artwork is found or regenerated. Do not propose metadata-only dpi changes, upsampling, or an editorial waiver as a substitute for missing image information.
+
 The launcher discovers the bundled Codex Python runtime. Word rendering also requires LibreOffice, and visual QA requires Poppler. If the launcher cannot find them, load the bundled workspace dependencies and set `CODEX_BUNDLED_PYTHON` to the returned Python path. Outside Codex, install `scripts/requirements.txt` in an isolated Python environment.
 
 ## Enforce the non-obvious checks

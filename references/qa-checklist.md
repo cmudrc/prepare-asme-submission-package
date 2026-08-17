@@ -41,6 +41,9 @@
 - Check crop, whitespace, font size, line weight, color, transparency, and grayscale legibility.
 - Confirm TIFF/EPS, exact numbering, and 15 MB maximum.
 - Confirm transparent raster artwork renders correctly against white rather than black.
+- For unusable artwork, record where authorized native/high-resolution sources were searched.
+- If broader source access is needed, ask once for permission and name the affected figures and proposed locations.
+- If recovery fails, give the user the required width, effective dpi, and minimum pixel dimensions for every replacement.
 
 ## Upload and recovery
 

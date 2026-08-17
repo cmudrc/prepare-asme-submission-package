@@ -21,6 +21,8 @@ Required checks:
 - preserve callouts/captions in text-only source; and
 - flatten transparent raster exports against an explicit white background.
 
+When the embedded or supplied graphic cannot satisfy these checks, search only source bundles and project locations already in scope. Search connected storage or communications read-only when the user has authorized those sources; otherwise ask once for permission, naming the figures and proposed locations. If no compliant source exists, request regeneration with exact pixel and width requirements rather than manufacturing dpi.
+
 ## Word source and PDF rendering
 
 - Accepting tracked text while retaining tracked formatting records produced visible change bars and revision-colored references in LibreOffice.

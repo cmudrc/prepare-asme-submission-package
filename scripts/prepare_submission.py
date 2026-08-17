@@ -1532,6 +1532,7 @@ def write_report(ctx: Context) -> None:
             "",
             "- Inspect every page under `qa/complete/` and `qa/text-only/` when present.",
             "- Inspect every TIFF/EPS at intended publication size.",
+            "- For unworkable figures, search only authorized source locations or ask the user once for permission; otherwise request native/high-resolution replacements with exact specifications.",
             "- Confirm caption lists, callouts, tables, equations, links, statements, and page footers.",
             "- Confirm the acceptance letter's exact multipart, resolution, and portal naming instructions.",
             "- Rebuild the full package after any change.",
