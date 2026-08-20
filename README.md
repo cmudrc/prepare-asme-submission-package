@@ -1,42 +1,51 @@
 # Prepare ASME Submission Package
 
+[![Tests](https://github.com/cmudrc/prepare-asme-submission-package/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/cmudrc/prepare-asme-submission-package/actions/workflows/tests.yml?query=branch%3Amain)
+[![Python 3.10–3.13](https://img.shields.io/badge/Python-3.10%E2%80%933.13-3776AB?logo=python&logoColor=white)](https://github.com/cmudrc/prepare-asme-submission-package/actions/workflows/tests.yml)
+
 A reusable agent skill and deterministic packager for accepted ASME manuscripts. It turns one authoritative Word document or Overleaf ZIP into a synchronized production-file package: clean full PDF, native text-only source, numbered figure files, upload ZIP, manifest, and QA report.
 
 It prepares files locally. It does **not** upload, publish, email, or submit anything.
 
 ## Install the skill
 
-### Codex
+### Codex (recommended)
 
-Install for your user account:
+Ask Codex's built-in skill installer to install the repository's root skill:
 
-```bash
-mkdir -p "$HOME/.agents/skills"
-git clone --depth 1 https://github.com/cmudrc/prepare-asme-submission-package.git \
-  "$HOME/.agents/skills/prepare-asme-submission-package"
+```text
+$skill-installer Install the root skill from https://github.com/cmudrc/prepare-asme-submission-package
 ```
 
-Codex discovers user skills under `~/.agents/skills`. If the skill is not immediately available as `$prepare-asme-submission-package`, restart Codex. See the [Codex skills documentation](https://learn.chatgpt.com/docs/build-skills).
+Codex detects newly installed skills automatically. If the skill is not immediately available as `$prepare-asme-submission-package`, restart Codex. See the [Codex skills documentation](https://learn.chatgpt.com/docs/build-skills#install-curated-skills-for-local-use).
 
-### Claude Code
+### Codex and Claude Code
 
-Install for all of your projects:
+If Node.js is available, install the skill globally for both agents with the open agent-skills CLI:
 
 ```bash
-mkdir -p "$HOME/.claude/skills"
+npx skills add cmudrc/prepare-asme-submission-package \
+  --global --agent codex --agent claude-code --yes
+```
+
+Omit either `--agent` argument when installing for only one agent. See the [`skills` CLI documentation](https://github.com/vercel-labs/skills#install-a-skill).
+
+In Codex, invoke the installed skill as `$prepare-asme-submission-package`. In Claude Code, invoke it as `/prepare-asme-submission-package`. Either agent can also select it automatically from a matching packaging request.
+
+### Manual installation
+
+If neither installer is available, clone the skill into the appropriate user-level directory:
+
+```bash
+mkdir -p "$HOME/.agents/skills" "$HOME/.claude/skills"
+git clone --depth 1 https://github.com/cmudrc/prepare-asme-submission-package.git \
+  "$HOME/.agents/skills/prepare-asme-submission-package"
+# Or, for Claude Code only:
 git clone --depth 1 https://github.com/cmudrc/prepare-asme-submission-package.git \
   "$HOME/.claude/skills/prepare-asme-submission-package"
 ```
 
-Or install only for the current project:
-
-```bash
-mkdir -p .claude/skills
-git clone --depth 1 https://github.com/cmudrc/prepare-asme-submission-package.git \
-  .claude/skills/prepare-asme-submission-package
-```
-
-Invoke it as `/prepare-asme-submission-package`, or describe the packaging task and let Claude select it. A newly created top-level skills directory may require a Claude Code restart. See the [Claude Code skills documentation](https://code.claude.com/docs/en/skills).
+Codex discovers user skills under `~/.agents/skills`; Claude Code uses `~/.claude/skills`. A newly created top-level skills directory may require an agent restart. See the [Claude Code skills documentation](https://code.claude.com/docs/en/skills).
 
 ## Runtime prerequisites
 
@@ -103,6 +112,7 @@ A nonzero exit means the package is blocked and no upload ZIP is created. A pass
 Run the regression suite from the repository root:
 
 ```bash
+python3 -m pip install -r tests/requirements.txt
 python3 -m unittest discover -s tests -v
 ```
 
