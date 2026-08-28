@@ -60,6 +60,9 @@ FIGURE_GROUP_CALLOUT_RE = re.compile(
     r"\bfig(?:ure)?s?\.?\s*(\d+[a-z]?(?:\s*(?:,|and|&|to|[-–—])\s*\d+[a-z]?)+)",
     re.IGNORECASE,
 )
+NUMBERED_FIGURE_FILENAME_RE = re.compile(
+    r"^Fig_(\d+)([a-z]?)\.(tiff|eps)$", re.IGNORECASE
+)
 
 
 @dataclass
@@ -1463,6 +1466,37 @@ def package_files(upload: Path, destination: Path) -> None:
                 archive.write(path, path.relative_to(upload))
 
 
+def check_numbered_figure_uploads(ctx: Context) -> list[str]:
+    """Require a numbered, one-to-one portal filename for every figure."""
+    figure_dir = ctx.upload / "figures"
+    actual = sorted(
+        (path.name for path in figure_dir.iterdir() if path.is_file()),
+        key=str.casefold,
+    ) if figure_dir.is_dir() else []
+    expected = sorted(
+        (item["file"] for item in ctx.figures if item.get("file")),
+        key=str.casefold,
+    )
+    invalid = [name for name in actual if not NUMBERED_FIGURE_FILENAME_RE.fullmatch(name)]
+    if invalid:
+        ctx.error(
+            "UNNUMBERED_FIGURE_FILENAME",
+            "Portal figure filenames must use Fig_<number>[letter].tiff or .eps: "
+            + ", ".join(invalid),
+        )
+    if actual != expected:
+        ctx.error(
+            "FIGURE_UPLOAD_INVENTORY_MISMATCH",
+            f"Generated figure files {actual} do not match the manifest figure inventory {expected}",
+        )
+    if actual and not invalid and actual == expected:
+        ctx.note(
+            "NUMBERED_FIGURE_FILENAMES",
+            f"Verified {len(actual)} portal figure filename(s): {', '.join(actual)}",
+        )
+    return actual
+
+
 def output_inventory(root: Path, excluded: set[Path] | None = None) -> list[dict]:
     excluded = {path.resolve() for path in (excluded or set())}
     items = []
@@ -1569,6 +1603,13 @@ def write_manifest(ctx: Context, zip_path: Path | None) -> None:
         "manual_review_required": any(finding.level == "WARNING" for finding in ctx.findings),
         "findings": [finding.__dict__ for finding in ctx.findings],
         "figures": ctx.figures,
+        "portal_upload": {
+            "figure_files": sorted(
+                (item["file"] for item in ctx.figures if item.get("file")),
+                key=str.casefold,
+            ),
+            "instruction": "Upload these generated numbered files, not the original source graphics, and verify the displayed Journal Tool filenames after upload.",
+        },
         "upload_zip": zip_path.name if zip_path else None,
         "outputs": inventory,
     }
@@ -1579,6 +1620,7 @@ def finalize(ctx: Context) -> int:
     check_required_sections(ctx.source_text, ctx)
     check_text_only_native(ctx)
     copy_supplemental_files(ctx)
+    check_numbered_figure_uploads(ctx)
     zip_path: Path | None = None
     if not ctx.blocked:
         zip_path = ctx.root / f"{safe_name(ctx.args.paper_id)}_submission_package.zip"

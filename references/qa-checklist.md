@@ -40,6 +40,7 @@
 - Check nominal and effective dpi; do not trust a tag alone.
 - Check crop, whitespace, font size, line weight, color, transparency, and grayscale legibility.
 - Confirm TIFF/EPS, exact numbering, and 15 MB maximum.
+- Compare `manifest.json`'s `portal_upload.figure_files` list to the generated `upload/figures/` directory and, after upload, to the filenames displayed in the Journal Tool. Do not upload the original unnumbered source graphics.
 - Confirm transparent raster artwork renders correctly against white rather than black.
 - For unusable artwork, record where authorized native/high-resolution sources were searched.
 - If broader source access is needed, ask once for permission and name the affected figures and proposed locations.

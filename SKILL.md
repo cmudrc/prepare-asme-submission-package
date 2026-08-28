@@ -119,6 +119,7 @@ The launcher discovers the bundled Codex Python runtime. Word rendering also req
 - Copy only the reachable LaTeX dependency closure; exclude archived manuscript versions and unrelated class/style files.
 - Match numbered figure files to in-text callouts and the figure-caption list, including subfigure letters.
 - Name files exactly as figures appear in the paper (`Fig_1`, `Fig_9a`, and so on).
+- Hand off or upload only the generated files under `upload/figures/`, never the unnumbered source graphics. Compare the Journal Tool's displayed filenames against `manifest.json` after upload; upload order or portal category does not substitute for explicit `Fig_<number>` filenames.
 - Treat nominal dpi metadata and effective dpi at printed size as separate checks.
 - Flatten raster alpha against white when exporting TIFF so transparent figures do not render with a black background in production tooling.
 - Block blank PDF pages. Inspect graphics-only pages manually.
@@ -135,6 +136,7 @@ Then follow [references/qa-checklist.md](references/qa-checklist.md):
 3. Inspect every figure at intended one- or two-column size.
 4. Confirm the upload ZIP contains only production files.
 5. Rebuild the entire package after any change.
+6. If the files are uploaded, verify the Journal Tool displays every numbered filename listed in `manifest.json`; do not infer success from the upload order.
 
 Word PDFs are rendered with LibreOffice when Microsoft Word is not available as a safe unattended renderer. Treat the resulting `WORD_RENDERER_VARIANCE` warning as a required comparison gate: fonts, pagination, equations, tracked-formatting artifacts, and object placement can differ from native Word even when the document XML is clean.
 

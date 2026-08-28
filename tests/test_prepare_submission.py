@@ -279,7 +279,16 @@ class PrepareSubmissionTests(unittest.TestCase):
         manifest = json.loads((output / "manifest.json").read_text())
         self.assertEqual(manifest["status"], "pass")
         self.assertTrue(manifest["manual_review_required"])
+        self.assertEqual(manifest["portal_upload"]["figure_files"], ["Fig_1.tiff"])
         self.assertGreaterEqual(manifest["figures"][0]["effective_dpi"], 899.9)
+        report = (output / "QA_REPORT.md").read_text()
+        self.assertIn("NUMBERED_FIGURE_FILENAMES", report)
+        with zipfile.ZipFile(output / "MD-26-1001_submission_package.zip") as archive:
+            figure_names = [
+                name for name in archive.namelist() if name.startswith("figures/")
+            ]
+            self.assertEqual(figure_names, ["figures/Fig_1.tiff"])
+            self.assertNotIn("figures/figure.png", archive.namelist())
         self.assertTrue(list((output / "qa/complete").glob("*.png")))
         self.assertTrue(list((output / "qa/text-only").glob("*.png")))
 

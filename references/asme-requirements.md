@@ -38,7 +38,7 @@ Automation can remove graphics and review markup, but it cannot safely infer eve
 
 Older or paper-specific JMD/JCISE messages have requested 600 dpi for all graphics. Follow the explicit message when present.
 
-- Name files with `Fig` or `Figure` followed by the figure number; include the subfigure letter when separate files are requested.
+- Name files with `Fig` or `Figure` followed immediately by the figure number (an underscore may separate them); include the subfigure letter when separate files are requested. The packager uses `Fig_1.tiff`, `Fig_2.tiff`, and so on.
 - Keep each graphic at or below 15 MB.
 - Evaluate effective dpi at intended printed size. Metadata changes and resampling do not restore missing information.
 - Preserve color when supplied and also inspect grayscale legibility.

@@ -5,6 +5,7 @@ These anonymized cases are requirements, not examples to quote externally.
 ## Figures
 
 - A package with compliant-resolution graphics was returned because filenames were not numbered as the figures appeared in the paper.
+- A JMD submission was returned after final-manuscript review because the figure files presented in the Journal Tool were not numbered (`Fig. 1`, `Fig. 2`, and so on). A correct local package is insufficient if the uploader selects the original unnumbered graphics or the portal displays a different inventory.
 - Raster figures at 96 dpi were rejected against a 266-dpi minimum.
 - Multiple JMD/JCISE packages were asked to provide 600-dpi graphics even when generic guidance differed.
 - A package was returned because multipart figures had to be uploaded as separate lettered files, despite general guidance preferring a combined multipart file when possible.
@@ -16,6 +17,7 @@ These anonymized cases are requirements, not examples to quote externally.
 Required checks:
 
 - compare figure/subfigure callouts, captions, embedded graphics, and uploaded filenames as sets;
+- hand off only the generated numbered files, record their exact names in the manifest, and compare the Journal Tool's displayed filenames after upload;
 - apply the controlling multipart rule explicitly;
 - verify both nominal and effective dpi;
 - preserve callouts/captions in text-only source; and
